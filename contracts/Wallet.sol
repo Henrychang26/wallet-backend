@@ -24,6 +24,7 @@ contract Wallet {
     IUniswapV3Pool public iUniswapV3Pool = IUniswapV3Pool(0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8);
     // Tokens[] public tokens;
     IPool public iPool = IPool(0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9);
+    // IERC20 public iERC20;
 
 
     //Struct
@@ -66,12 +67,12 @@ contract Wallet {
     receive() external payable{
     }
 
-    function deposit(address token, uint256 amount) external {
+    function deposit(IERC20 token, uint256 amount) external {
         tokenBalance[token] += amount;
         emit Deposit(token, amount);
     }
 
-    function withdraw(address token, uint256 amount) public payable{
+    function withdraw(IERC20 token, uint256 amount) public payable{
         if(amount <= 0){
             revert MoreThanZero();
         } 
@@ -79,8 +80,12 @@ contract Wallet {
             revert InsufficientFund();
         }
 
-        (bool success, )= payable(msg.sender).call{value: amount}("");
-        require(success, "Transfer failed");
+        // (bool success, )= payable(msg.sender).call{value: amount}("");
+        // require(success, "Transfer failed");
+        IERC20(token).transfer( payable(msg.sender), amount);
+        // IERC20(token).transfer(to, amount);
+        // payable(msg.sender).transfer(amount);
+        tokenBalance[token] -= amount;
         emit Withdraw(msg.sender, token, amount);
     }
 
@@ -151,106 +156,29 @@ contract Wallet {
         DataTypes.ReserveData memory reserveData = iPool.getReserveData(token);
         return iPool.getReserveData(token).configuration.data & 0x1 == 1 && reserveData.configuration.data & 0x2 == 0x2;
     }
-}
 
-    // function approve(address spender, uint256 amount) external returns (bool);
+    function getOwner() public view returns (address){
+        return owner;
+    }
 
-//     interface IUniswapV3Pool {
-//     function tickSpacing() external view returns (int24);
-//     function tickAt(int24 tickCumulative) external pure returns (int24);
-//     function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 feeProtocol, uint16 unlocked);
-// }
+    function getTokenBalance(address token) public view  onlyOwner returns(uint256){
+        return tokenBalance[token];
+    }
 
-// interface IUniswapV3SwapCallback {
-//     function uniswapV3SwapCallback(
-//         int256 amount0Delta,
-//         int256 amount1Delta,
-//         bytes calldata data
-//     ) external;
-// }
+    function getUnderlying(address token) public view onlyOwner returns(uint256){
+        return balance[token].underlying;
+    }
 
-// interface IUniswapV3SwapRouter {
-//     function exactInputSingle(
-//         uint256 amountIn,
-//         uint256 amountOutMinimum,
-//         uint24 fee,
-//         address recipient,
-//         uint256 deadline,
-//         uint160 sqrtPriceLimitX96
-//     ) external payable returns (uint256 amountOut);
-// }
+    function getCollateral(address token) public view onlyOwner returns(uint256){
+        return balance[token].collateral;
+    }
+    function getDebt(address token) public view onlyOwner returns(uint256){
+        return balance[token].debt;
+    }
 
-// contract UniswapV3Example {
-//     address private constant UNISWAP_POOL_ADDRESS = 0x1F98431c8aD98523631AE4a59f267346ea31F984;
-//     address private constant WETH_ADDRESS = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-//     address private constant DAI_ADDRESS = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
+    // function getsSwapRouter() public view returns(address){
+    //     return address(swapRouter);
+    // }
+}   
 
-//     function swapWETHtoDAI(uint256 amountIn, uint160 sqrtPriceLimitX96) external {
-//         IERC20(WETH_ADDRESS).approve(UNISWAP_POOL_ADDRESS, amountIn);
-
-//         IUniswapV3Pool uniswapPool = IUniswapV3Pool(UNISWAP_POOL_ADDRESS);
-
-//         (uint160 sqrtPriceX96, , , ) = uniswapPool.slot0();
-//         int24 tick = uniswapPool.tickAt(int24(sqrtPriceX96));
-
-//         int24 tickSpacing = uniswapPool.tickSpacing();
-//         int24 tickLimit = int24(sqrtPriceLimitX96 >> 64);
-
-//         if (tick < tickLimit) {
-//             tick = tickLimit - tickSpacing;
-//         } else if (tick > tickLimit) {
-//             tick = tickLimit + tickSpacing;
-//         }
-
-//         (uint256 amount0Out, uint256 amount1Out) = uniswapPool.swap(
-//             address(this),
-//             false,
-//             int256(amountIn),
-//             int256(0),
-//             abi.encode(
-//                 IUniswapV3SwapCallback(address(this)).uniswapV3SwapCallback.selector,
-//                 msg.sender
-//             )
-//         );
-
-//         IERC20(DAI_ADDRESS).transfer(msg.sender, amount1Out);
-//     }
-
-// }
-
-// interface IUniswapV3Factory {
-//     function allPairsLength() external view returns (uint256);
-//     function allPairs(uint256 index) external view returns (address pair);
-// }
-
-// contract UniswapV3TokenList {
-//     address public uniswapFactoryAddress = 0x1F98431c8aD98523631AE4a59f267346ea31F984; // Replace with actual Uniswap V3 factory address
-
-//     function getTokenList() public view returns (address[] memory) {
-//         uint256 length = IUniswapV3Factory(uniswapFactoryAddress).allPairsLength();
-//         address[] memory tokenList = new address[](length);
-
-//         for (uint256 i = 0; i < length; i++) {
-//             address pair = IUniswapV3Factory(uniswapFactoryAddress).allPairs(i);
-//             (address token0, address token1, ) = IUniswapV3Pool(pair).slot0();
-            
-//             if (!contains(tokenList, token0)) {
-//                 tokenList[i] = token0;
-//             }
-//             if (!contains(tokenList, token1)) {
-//                 tokenList[i] = token1;
-//             }
-//         }
-
-//         return tokenList;
-//     }
-
-//     function contains(address[] memory array, address item) internal pure returns (bool) {
-//         for (uint256 i = 0; i < array.length; i++) {
-//             if (array[i] == item) {
-//                 return true;
-//             }
-//         }
-//         return false;
-//     }
-// }
+ 
