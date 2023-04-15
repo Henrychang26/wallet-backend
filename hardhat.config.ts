@@ -33,7 +33,7 @@ const POLYGONSCAN_API_KEY =
   process.env.POLYGONSCAN_API_KEY || "Your polygonscan API key";
 const REPORT_GAS = process.env.REPORT_GAS || false;
 
-const config: any = {
+const config: HardhatUserConfig = {
   defaultNetwork: "hardhat",
   networks: {
     hardhat: {
