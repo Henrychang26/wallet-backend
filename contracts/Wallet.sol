@@ -24,8 +24,7 @@ contract Wallet {
     IUniswapV3Pool public iUniswapV3Pool = IUniswapV3Pool(0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8);
     // Tokens[] public tokens;
     IPool public iPool = IPool(0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9);
-    // IERC20 public iERC20;
-
+    // IERC20 public ierc20 = IERC20(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270);
 
     //Struct
 
@@ -67,24 +66,27 @@ contract Wallet {
     receive() external payable{
     }
 
-    function deposit(IERC20 token, uint256 amount) external {
+    function deposit(address token, uint256 amount) external {
+        if(amount <= 0){
+            revert MoreThanZero();
+        }
+        IERC20 _token = IERC20(token);
+        _token.transferFrom(msg.sender, address(this), amount);
         tokenBalance[token] += amount;
         emit Deposit(token, amount);
     }
 
-    function withdraw(IERC20 token, uint256 amount) public payable{
+    function withdraw(address token, uint256 amount) public payable{
         if(amount <= 0){
             revert MoreThanZero();
         } 
         if(amount > tokenBalance[token]){
             revert InsufficientFund();
         }
+        require(msg.sender != address(0));
 
-        // (bool success, )= payable(msg.sender).call{value: amount}("");
-        // require(success, "Transfer failed");
-        IERC20(token).transfer( payable(msg.sender), amount);
-        // IERC20(token).transfer(to, amount);
-        // payable(msg.sender).transfer(amount);
+        bool success = IERC20(token).transfer(msg.sender, amount);
+        require(success);
         tokenBalance[token] -= amount;
         emit Withdraw(msg.sender, token, amount);
     }

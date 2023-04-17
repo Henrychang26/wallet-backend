@@ -8,7 +8,7 @@ import {
 } from "../helper-hardhat-config";
 import verify from "../utils/verify";
 
-const deployWallet: DeployFunction = async function (
+const deployWmatic: DeployFunction = async function (
   hre: HardhatRuntimeEnvironment
 ) {
   const { deployments, getNamedAccounts, network, ethers } = hre;
@@ -19,14 +19,11 @@ const deployWallet: DeployFunction = async function (
     ? 1
     : VERIFICATION_BLOCK_CONFIRMATIONS;
 
-  const WMATIC = "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270";
-  const args: any = [];
+  log("----------------------");
 
-  log("------------------------------");
-
-  const wallet = await deploy("Wallet", {
+  const WMatic = await deploy("Wmatic", {
     from: deployer,
-    args: args,
+    args: [],
     log: true,
     waitConfirmations: waitBlockConfirmations,
   });
@@ -36,9 +33,9 @@ const deployWallet: DeployFunction = async function (
     process.env.ETHERSCAN_API_KEY
   ) {
     log("Verifying...");
-    await verify(wallet.address, args);
+    await verify(WMatic.address, []);
   }
 };
 
-export default deployWallet;
-deployWallet.tags = ["wallet", "all"];
+export default deployWmatic;
+deployWmatic.tags = ["wbtc", "all"];
