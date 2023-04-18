@@ -8,6 +8,7 @@ export interface networkConfigItem {
   raffleEntranceFee?: string;
   callbackGasLimit?: string;
   vrfCoordinatorV2?: string;
+  gasLimit?: number;
 }
 
 export interface networkConfigInfo {
@@ -17,12 +18,14 @@ export interface networkConfigInfo {
 export const networkConfig: networkConfigInfo = {
   31337: {
     name: "localhost",
+    gasLimit: 500000,
   },
   11155111: {
     name: "sepolia",
   },
   1: {
     name: "mainnet",
+    gasLimit: 500000,
   },
 };
 
