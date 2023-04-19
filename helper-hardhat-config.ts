@@ -2,12 +2,7 @@ import { ethers } from "hardhat";
 
 export interface networkConfigItem {
   name?: string;
-  subscriptionId?: string;
   gasLane?: string;
-  keepersUpdateInterval?: string;
-  raffleEntranceFee?: string;
-  callbackGasLimit?: string;
-  vrfCoordinatorV2?: string;
   gasLimit?: number;
   addressProvider?: string;
 }
@@ -24,6 +19,7 @@ export const networkConfig: networkConfigInfo = {
   },
   11155111: {
     name: "sepolia",
+    addressProvider: "0x0496275d34753A48320CA58103d5220d394FF77F",
   },
   1: {
     name: "mainnet",

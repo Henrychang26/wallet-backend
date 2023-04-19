@@ -136,7 +136,10 @@ contract Wallet {
     emit SwapSuccess(tokenIn, tokenOut, amountOut);
   }
 
-  function supplyAaveV3(address token, uint256 amount) public payable {
+  function supplyAaveV3(
+    address token,
+    uint256 amount
+  ) public returns (address aTokenAddress, address debtTokenAddress) {
     if (amount <= 0) {
       revert MoreThanZero();
     }
@@ -146,11 +149,14 @@ contract Wallet {
     uint16 referralCode = 0;
 
     iPool.supply(token, amount, onBehalfOf, referralCode);
+    (aTokenAddress, debtTokenAddress) = getAaveTokenAddress(token);
 
     balance[token].underlying += amount;
     balance[token].collateral += amount;
 
     tokenBalance[token] -= amount;
+    tokenBalance[aTokenAddress] += amount;
+
     //No need for event(original contract already emits )
     // emit SupplyToken(token, amount);
   }
@@ -163,6 +169,7 @@ contract Wallet {
     if (amount <= 0) {
       revert MoreThanZero();
     }
+    require(approvePool(token, amount));
     uint16 referralCode = 0;
     address onBehalfOf = address(this);
 
@@ -218,6 +225,42 @@ contract Wallet {
   //     iPool.getReserveData(token).configuration.data & 0x1 == 1 &&
   //     reserveData.configuration.data & 0x2 == 0x2;
   // }
+
+  function getUserData(
+    address _user
+  )
+    public
+    view
+    returns (
+      uint256 totalCollateralBase,
+      uint256 totalDebtBase,
+      uint256 availableBorrowsBase,
+      uint256 currentLiquidationThreshold,
+      uint256 ltv,
+      uint256 healthFactor
+    )
+  {
+    (
+      totalCollateralBase,
+      totalDebtBase,
+      availableBorrowsBase,
+      currentLiquidationThreshold,
+      ltv,
+      healthFactor
+    ) = iPool.getUserAccountData(_user);
+  }
+
+  function enableReserveAsCollateral(address token) public {
+    iPool.setUserUseReserveAsCollateral(token, true);
+  }
+
+  function enableStableRateMode(address token) public {
+    iPool.swapBorrowRateMode(token, 1);
+  }
+
+  function enableVariableRateMode(address token) public {
+    iPool.swapBorrowRateMode(token, 2);
+  }
 
   function getOwner() public view returns (address) {
     return owner;
