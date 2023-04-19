@@ -9,6 +9,7 @@ export interface networkConfigItem {
   callbackGasLimit?: string;
   vrfCoordinatorV2?: string;
   gasLimit?: number;
+  addressProvider?: string;
 }
 
 export interface networkConfigInfo {
@@ -19,6 +20,7 @@ export const networkConfig: networkConfigInfo = {
   31337: {
     name: "localhost",
     gasLimit: 500000,
+    addressProvider: "0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e",
   },
   11155111: {
     name: "sepolia",
@@ -26,6 +28,7 @@ export const networkConfig: networkConfigInfo = {
   1: {
     name: "mainnet",
     gasLimit: 500000,
+    addressProvider: "0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e",
   },
 };
 

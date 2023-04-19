@@ -6,13 +6,9 @@ import "hardhat/console.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
-import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@aave/core-v3/contracts/interfaces/IPool.sol";
 import { DataTypes } from "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
-
-// interface IUniswapV3SwapCallback {
-//     function uniswapV3SwapCallback(int256 amount0, int256 amount1, bytes calldata data) external;
-// }
+import { IPoolAddressesProvider } from "@aave/core-v3/contracts/interfaces/IPoolAddressesProvider.sol";
 
 error NotOwner();
 error MoreThanZero();
@@ -25,10 +21,11 @@ contract Wallet {
   ISwapRouter public swapRouter =
     ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
   // address public IUniswapV3Pool =
-  IUniswapV3Pool public iUniswapV3Pool =
-    IUniswapV3Pool(0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8);
+  // IUniswapV3Pool public iUniswapV3Pool =
+  //   IUniswapV3Pool(0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8);
   // Tokens[] public tokens;
-  IPool public iPool = IPool(0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9);
+  IPool public iPool;
+  IPoolAddressesProvider public immutable ADDRESSES_PROVIDER;
   // IERC20 public ierc20 = IERC20(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270);
 
   //Struct
@@ -40,7 +37,9 @@ contract Wallet {
   }
 
   //Constructor
-  constructor() {
+  constructor(address _addressProvider) {
+    ADDRESSES_PROVIDER = IPoolAddressesProvider(_addressProvider);
+    iPool = IPool(ADDRESSES_PROVIDER.getPool());
     owner = msg.sender;
   }
 
@@ -64,10 +63,10 @@ contract Wallet {
 
   //modifiers
 
-  modifier isSupportedToken(address token) {
-    require(supportedList(token));
-    _;
-  }
+  // modifier isSupportedToken(address token) {
+  //   require(supportedList(token));
+  //   _;
+  // }
 
   modifier onlyOwner() {
     if (owner != msg.sender) {
@@ -118,13 +117,6 @@ contract Wallet {
     uint256 amountIn,
     uint256 amountOutMin
   ) public returns (uint256 amountOut) {
-    // TransferHelper.safeTransferFrom(
-    //   tokenIn,
-    //   msg.sender,
-    //   address(this),
-    //   amountIn
-    // );
-
     TransferHelper.safeApprove(tokenIn, address(swapRouter), amountIn);
 
     ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
@@ -144,14 +136,17 @@ contract Wallet {
     emit SwapSuccess(tokenIn, tokenOut, amountOut);
   }
 
-  function supplyAaveV2(
-    address token,
-    uint256 amount
-  ) public payable isSupportedToken(token) {
+  function supplyAaveV3(address token, uint256 amount) public payable {
     if (amount <= 0) {
       revert MoreThanZero();
     }
-    iPool.supply(token, amount, msg.sender, 0);
+    require(approvePool(token, amount));
+
+    address onBehalfOf = address(this);
+    uint16 referralCode = 0;
+
+    iPool.supply(token, amount, onBehalfOf, referralCode);
+
     balance[token].underlying += amount;
     balance[token].collateral += amount;
 
@@ -160,43 +155,45 @@ contract Wallet {
     // emit SupplyToken(token, amount);
   }
 
-  function borrowAaveV2(
+  function borrowAaveV3(
     address token,
     uint256 amount,
     uint256 interestRateMode
-  ) public isSupportedToken(token) {
+  ) public {
     if (amount <= 0) {
       revert MoreThanZero();
     }
-    iPool.borrow(token, amount, interestRateMode, 0, msg.sender);
+    uint16 referralCode = 0;
+    address onBehalfOf = address(this);
+
+    iPool.borrow(token, amount, interestRateMode, referralCode, onBehalfOf);
     balance[token].debt += amount;
     tokenBalance[token] += amount;
   }
 
-  function repayAaveV2(
+  function repayAaveV3(
     address token,
     uint256 amount,
     uint256 interestRateMode
-  ) public isSupportedToken(token) {
+  ) public {
+    address onBehalfOf = address(this);
     uint256 amountRepaid = iPool.repay(
       token,
       amount,
       interestRateMode,
-      msg.sender
+      onBehalfOf
     );
     balance[token].debt -= amountRepaid;
 
     tokenBalance[token] -= amount;
   }
 
-  function withdrawAaveV2(
-    address token,
-    uint256 amount
-  ) public isSupportedToken(token) {
+  function withdrawAaveV3(address token, uint256 amount) public {
     if (amount <= 0) {
       revert MoreThanZero();
     }
-    uint256 amountWithdrawn = iPool.withdraw(token, amount, msg.sender);
+    address to = address(this);
+    uint256 amountWithdrawn = iPool.withdraw(token, amount, to);
     balance[token].underlying -= amount;
     balance[token].collateral -= amount;
     tokenBalance[token] += amountWithdrawn;
@@ -209,13 +206,18 @@ contract Wallet {
     debtTokenAddress = iPool.getReserveData(token).variableDebtTokenAddress;
   }
 
-  function supportedList(address token) public view returns (bool) {
-    // IPool.ReserveData memory reserveData = IPool.getReserveData(token);
-    DataTypes.ReserveData memory reserveData = iPool.getReserveData(token);
-    return
-      iPool.getReserveData(token).configuration.data & 0x1 == 1 &&
-      reserveData.configuration.data & 0x2 == 0x2;
+  function approvePool(address token, uint256 amount) public returns (bool) {
+    address provider = ADDRESSES_PROVIDER.getPool();
+    return IERC20(token).approve(provider, amount);
   }
+
+  // function supportedList(address token) public view returns (bool) {
+  //   // IPool.ReserveData memory reserveData = IPool.getReserveData(token);
+  //   DataTypes.ReserveData memory reserveData = iPool.getReserveData(token);
+  //   return
+  //     iPool.getReserveData(token).configuration.data & 0x1 == 1 &&
+  //     reserveData.configuration.data & 0x2 == 0x2;
+  // }
 
   function getOwner() public view returns (address) {
     return owner;

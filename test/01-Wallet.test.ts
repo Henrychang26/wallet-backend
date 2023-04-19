@@ -2,12 +2,11 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { assert, expect } from "chai";
 import { network, deployments, ethers } from "hardhat";
 import { developmentChains } from "../helper-hardhat-config";
-import { IERC20, ISwapRouter, Wallet } from "../typechain-types";
-import { BigNumberish, Contract } from "ethers";
-import { PromiseOrValue } from "../typechain-types/common";
+import { IERC20, IPool, ISwapRouter, Wallet } from "../typechain-types";
+import { parseUnits } from "ethers/lib/utils";
 
 const UniswapV3Pool = "0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8";
-const IPool = "0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9";
+const IPOOL = "0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e";
 
 const DAI = "0x6B175474E89094C44Da98b954EedeAC495271d0F";
 const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
@@ -26,6 +25,7 @@ let AMOUNT = 100;
       let dai: IERC20;
       let usdc: IERC20;
       let iSwapRouter: ISwapRouter;
+      let iPool: IPool;
 
       beforeEach(async () => {
         accounts = await ethers.getSigners();
@@ -37,8 +37,9 @@ let AMOUNT = 100;
         dai = await ethers.getContractAt("IERC20", DAI);
         usdc = await ethers.getContractAt("IERC20", USDC);
         iSwapRouter = await ethers.getContractAt("ISwapRouter", ISWAPROUTER);
-
+        iPool = await ethers.getContractAt("IPool", IPOOL);
         await dai.connect(owner).approve(wallet.address, AMOUNT);
+        await dai.connect(owner).approve(iPool.address, AMOUNT);
       });
 
       describe("constructor", () => {
@@ -103,31 +104,23 @@ let AMOUNT = 100;
       });
       describe("Swap", () => {
         it("should be able to swap", async () => {
-          await wallet.deposit(dai.address, AMOUNT);
+          // await wallet.deposit(dai.address, AMOUNT);
 
           const daiInitialBal = await dai.balanceOf(owner.address);
           console.log(`dai balance before: ${daiInitialBal.toString()}`);
           const usdcInitialBal = await usdc.balanceOf(owner.address);
-          console.log(`usdc balance before: ${usdcInitialBal.toString()}`);
+          // console.log(`usdc balance before: ${usdcInitialBal.toString()}`);
 
           const amountIn = ethers.utils.parseUnits("1", "17");
           const amountOutMin = 0;
 
           await dai.approve(wallet.address, amountIn);
           await dai.approve(iSwapRouter.address, daiInitialBal);
-          // const allowace = await dai
-          //   .connect(owner)
-          //   .allowance(owner.address, iSwapRouter.address);
-          // console.log(allowace.toString());
           await wallet.deposit(dai.address, amountIn);
-
-          const bal = await wallet.getTokenBalance(dai.address);
-          // const bal = await dai.connect(owner).balanceOf(owner.address);
-          console.log(bal.toString());
 
           console.log("----");
 
-          await wallet.swap(
+          const tx = await wallet.swap(
             dai.address,
             usdc.address,
             3000,
@@ -135,19 +128,46 @@ let AMOUNT = 100;
             amountOutMin
           );
 
-          const daiBal = await wallet.getTokenBalance(dai.address);
-          const usdcBal = await wallet.getTokenBalance(usdc.address);
-          console.log(`DAI bal after swap: ${daiBal.toString()}`);
-          console.log(`USDC bal after swap: ${usdcBal.toString()}`);
+          const DaiBalanceWallet = await wallet
+            .getTokenBalance(dai.address)
+            .then((res) => {
+              return ethers.utils.parseEther(res.toString());
+            });
 
-          const dailBalAfter = await dai.balanceOf(owner.address);
-          console.log(`dai balance = ${dailBalAfter.toString()}`);
-          const usdcBalAfter = await usdc.balanceOf(owner.address);
-          console.log(`usdc balance = ${usdcBalAfter.toString()}`);
+          assert.equal(DaiBalanceWallet.toString(), "0");
+        });
+      });
+
+      describe("supplyAaveV3", () => {
+        it("should revert when amount is 0", async () => {
+          const amountIn = 0;
+          await expect(
+            wallet.supplyAaveV3(dai.address, amountIn)
+          ).to.be.revertedWith("MoreThanZero");
+        });
+
+        it("should be able to supply to aave and receive aToken", async () => {
+          // console.log(allowance.toString());
           console.log("----");
-          //   console.log(tx.gasLimit);
-          //   await tx.wait();
-          //   console.log(tx);
+
+          await dai.approve(wallet.address, AMOUNT);
+          const allowace = await dai.allowance(owner.address, wallet.address);
+          // console.log(allowace.toString());
+          await dai.approve(iPool.address, AMOUNT);
+          await wallet.deposit(dai.address, AMOUNT);
+
+          const tx = await wallet.supplyAaveV3(dai.address, AMOUNT);
+
+          const [aTokenAddress, debtTokenAddress] =
+            await wallet.getAaveTokenAddress(dai.address);
+          console.log(aTokenAddress.toString());
+
+          const aToken = await ethers.getContractAt("IERC20", aTokenAddress);
+          const bal = await aToken.balanceOf(wallet.address);
+          console.log(bal.toString());
+          const underlying = (await wallet.balance(dai.address)).underlying;
+          assert.equal(bal.toString(), AMOUNT.toString());
+          assert.equal(underlying.toString(), AMOUNT.toString());
         });
       });
     });

@@ -19,8 +19,8 @@ const deployWallet: DeployFunction = async function (
     ? 1
     : VERIFICATION_BLOCK_CONFIRMATIONS;
 
-  const WMATIC = "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270";
-  const args: any = [];
+  const AddressProvider = networkConfig[chainId!]["addressProvider"];
+  const args: any = [AddressProvider];
 
   log("------------------------------");
 
