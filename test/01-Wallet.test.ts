@@ -11,6 +11,8 @@ const DAI = "0x6B175474E89094C44Da98b954EedeAC495271d0F";
 const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const ISWAPROUTER = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
 const WETH9 = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+// const WETH9 = "0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce";
+// 0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce shiba inu
 
 let AMOUNT = 100;
 
@@ -22,7 +24,6 @@ const Weth = ethers.utils.parseEther("1");
       let wallet: Wallet;
       let walletContract: Wallet;
       let owner: SignerWithAddress;
-      let outsideAccount: SignerWithAddress;
       let accounts: SignerWithAddress[];
       let dai: IERC20;
       let usdc: IERC20;
@@ -33,7 +34,7 @@ const Weth = ethers.utils.parseEther("1");
       beforeEach(async () => {
         accounts = await ethers.getSigners();
         owner = accounts[0];
-        outsideAccount = accounts[1];
+        // console.log(owner.address);
         await deployments.fixture(["all"]);
         walletContract = await ethers.getContract("Wallet");
         IWethContract = await ethers.getContractAt("IWeth", WETH9);
@@ -46,9 +47,6 @@ const Weth = ethers.utils.parseEther("1");
         await dai.connect(owner).approve(iPool.address, AMOUNT);
         await IWethContract.deposit({ value: Weth });
         await IWethContract.approve(wallet.address, Weth);
-        // const wethBal = await wallet.getTokenBalance(IWethContract.address);
-        const wethBal = await IWethContract.balanceOf(owner.address);
-        console.log(wethBal.toString());
       });
 
       describe("constructor", () => {
@@ -127,8 +125,6 @@ const Weth = ethers.utils.parseEther("1");
           await dai.approve(iSwapRouter.address, daiInitialBal);
           await wallet.deposit(dai.address, amountIn);
 
-          console.log("----");
-
           const tx = await wallet.swap(
             dai.address,
             usdc.address,
@@ -178,7 +174,15 @@ const Weth = ethers.utils.parseEther("1");
           assert.equal(underlying.toString(), AMOUNT.toString());
         });
       });
-      describe.only("borrowAaveV3", () => {
+      describe("borrowAaveV3", () => {
+        beforeEach(async () => {
+          const amountIn = ethers.utils.parseEther("1");
+          const borrowAmount = ethers.utils.parseEther("0.005");
+          await IWethContract.approve(wallet.address, amountIn);
+          await wallet.deposit(IWethContract.address, amountIn);
+          await wallet.supplyAaveV3(IWethContract.address, amountIn);
+        });
+
         it("should revert when amount is 0", async () => {
           const amountIn = 0;
           await expect(
@@ -187,46 +191,69 @@ const Weth = ethers.utils.parseEther("1");
         });
 
         it("should be able to borrow and update DS", async () => {
+          const borrowAmount = ethers.utils.parseEther("0.005");
+
+          const userData = await wallet.getUserData(wallet.address);
+          // console.log(tx.totalCollateralBase);
+          const LTV = userData.ltv;
+          const LTVRatio = LTV;
+          console.log(LTVRatio.toString());
+
+          // console.log(
+          //   "after supplying total totalCollateralBase:" +
+          //     userData.totalCollateralBase.toString()
+          // );
+          // console.log(
+          //   "after supplying total availableBorrowsBase:" +
+          //     userData.availableBorrowsBase.toString()
+          // );
+
+          const borrowTx = await wallet.borrowAaveV3(
+            dai.address,
+            borrowAmount,
+            2
+          );
+          // console.log(borrowTx);
+          console.log(borrowTx.gasPrice?.toString());
+
+          const daiAfter = await wallet.getTokenBalance(dai.address);
+
+          const txAfter = await wallet.getUserData(wallet.address);
+
+          assert.equal(daiAfter.toString(), borrowAmount.toString());
+        });
+      });
+
+      describe("repay", () => {
+        beforeEach(async () => {
           const amountIn = ethers.utils.parseEther("1");
           const borrowAmount = ethers.utils.parseEther("0.005");
           await IWethContract.approve(wallet.address, amountIn);
-          await IWethContract.approve(iPool.address, amountIn);
           await wallet.deposit(IWethContract.address, amountIn);
-
-          const bal = await wallet.getTokenBalance(IWethContract.address);
-          console.log("after deposited weth wallet balance " + bal.toString());
-
           await wallet.supplyAaveV3(IWethContract.address, amountIn);
-          // await wallet.enableReserveAsCollateral(IWethContract.address);
-          // ^does not have any impact for supported tokens
-
-          const bal1 = await wallet.getTokenBalance(IWethContract.address);
-          console.log(
-            "after supplying weth wallet balance (should be 0)" +
-              bal1.toString()
+          const borrowTx = await wallet.borrowAaveV3(
+            dai.address,
+            borrowAmount,
+            2
           );
+        });
 
-          const tx = await wallet.getUserData(wallet.address);
-          // console.log(tx.totalCollateralBase);
-          console.log(
-            "after supplying total totalCollateralBase:" +
-              tx.totalCollateralBase.toString()
-          );
-          console.log(
-            "after supplying total availableBorrowsBase:" +
-              tx.availableBorrowsBase.toString()
-          );
+        it("should be able to repay", async () => {
+          const borrowAmount = ethers.utils.parseEther("0.005");
+          await wallet.repayAaveV3(dai.address, borrowAmount, 2);
+          const daiBal = await wallet.getTokenBalance(dai.address);
 
-          const daiBefore = await wallet.getTokenBalance(dai.address);
-          console.log("Dai before borrowing:" + daiBefore.toString());
-          await wallet.borrowAaveV3(dai.address, borrowAmount, 1);
+          assert.equal(daiBal.toString(), "0");
+        });
+      });
 
-          const daiAfter = await wallet.getTokenBalance(dai.address);
-          console.log("Dai after borrowing" + daiAfter.toString());
-
-          const txAfter = await wallet.getUserData(wallet.address);
-          // console.log(txAfter.totalCollateralBase);
-          console.log("Total Debt:" + txAfter.totalDebtBase.toString());
+      describe("withdraw", () => {
+        it("should be able to withdraw", async () => {
+          const amountIn = ethers.utils.parseEther("1");
+          await IWethContract.approve(wallet.address, amountIn);
+          await wallet.deposit(IWethContract.address, amountIn);
+          await wallet.supplyAaveV3(IWethContract.address, amountIn);
+          await wallet.withdrawAaveV3(IWethContract.address, amountIn);
         });
       });
     });

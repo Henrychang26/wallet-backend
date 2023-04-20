@@ -17,16 +17,12 @@ error InsufficientAllowance();
 
 contract Wallet {
   //State Variables
+
   address public owner;
-  ISwapRouter public swapRouter =
+  ISwapRouter public immutable swapRouter =
     ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
-  // address public IUniswapV3Pool =
-  // IUniswapV3Pool public iUniswapV3Pool =
-  //   IUniswapV3Pool(0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8);
-  // Tokens[] public tokens;
   IPool public iPool;
   IPoolAddressesProvider public immutable ADDRESSES_PROVIDER;
-  // IERC20 public ierc20 = IERC20(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270);
 
   //Struct
 
@@ -41,12 +37,14 @@ contract Wallet {
     ADDRESSES_PROVIDER = IPoolAddressesProvider(_addressProvider);
     iPool = IPool(ADDRESSES_PROVIDER.getPool());
     owner = msg.sender;
+    getSupportedList();
   }
 
   //Mapping
   //account->token->balance
   mapping(address => uint256) public tokenBalance;
   mapping(address => Balance) public balance;
+  mapping(address => bool) public isSupportedToken;
 
   //Events
   event Deposit(address indexed token, uint indexed amount);
@@ -63,10 +61,10 @@ contract Wallet {
 
   //modifiers
 
-  // modifier isSupportedToken(address token) {
-  //   require(supportedList(token));
-  //   _;
-  // }
+  modifier SupportedToken(address token) {
+    require(isSupportedToken[token] == true, "Not Supported");
+    _;
+  }
 
   modifier onlyOwner() {
     if (owner != msg.sender) {
@@ -139,7 +137,7 @@ contract Wallet {
   function supplyAaveV3(
     address token,
     uint256 amount
-  ) public returns (address aTokenAddress, address debtTokenAddress) {
+  ) public SupportedToken(token) {
     if (amount <= 0) {
       revert MoreThanZero();
     }
@@ -149,7 +147,7 @@ contract Wallet {
     uint16 referralCode = 0;
 
     iPool.supply(token, amount, onBehalfOf, referralCode);
-    (aTokenAddress, debtTokenAddress) = getAaveTokenAddress(token);
+    (address aTokenAddress, ) = getAaveTokenAddress(token);
 
     balance[token].underlying += amount;
     balance[token].collateral += amount;
@@ -165,7 +163,7 @@ contract Wallet {
     address token,
     uint256 amount,
     uint256 interestRateMode
-  ) public {
+  ) public SupportedToken(token) {
     if (amount <= 0) {
       revert MoreThanZero();
     }
@@ -174,8 +172,12 @@ contract Wallet {
     address onBehalfOf = address(this);
 
     iPool.borrow(token, amount, interestRateMode, referralCode, onBehalfOf);
+
+    (, address variableDebtTokenAddress) = getAaveTokenAddress(token);
+
     balance[token].debt += amount;
     tokenBalance[token] += amount;
+    tokenBalance[variableDebtTokenAddress] += amount;
   }
 
   function repayAaveV3(
@@ -190,9 +192,12 @@ contract Wallet {
       interestRateMode,
       onBehalfOf
     );
+    (, address variableDebtTokenAddress) = getAaveTokenAddress(token);
+
     balance[token].debt -= amountRepaid;
 
     tokenBalance[token] -= amount;
+    tokenBalance[variableDebtTokenAddress] -= amount;
   }
 
   function withdrawAaveV3(address token, uint256 amount) public {
@@ -200,31 +205,33 @@ contract Wallet {
       revert MoreThanZero();
     }
     address to = address(this);
+
     uint256 amountWithdrawn = iPool.withdraw(token, amount, to);
+
+    (address aTokenAddress, ) = getAaveTokenAddress(token);
     balance[token].underlying -= amount;
     balance[token].collateral -= amount;
     tokenBalance[token] += amountWithdrawn;
+    tokenBalance[aTokenAddress] -= amount;
   }
 
   function getAaveTokenAddress(
     address token
-  ) public view returns (address aTokenAddress, address debtTokenAddress) {
+  )
+    public
+    view
+    returns (address aTokenAddress, address variableDebtTokenAddress)
+  {
     aTokenAddress = iPool.getReserveData(token).aTokenAddress;
-    debtTokenAddress = iPool.getReserveData(token).variableDebtTokenAddress;
+    variableDebtTokenAddress = iPool
+      .getReserveData(token)
+      .variableDebtTokenAddress;
   }
 
   function approvePool(address token, uint256 amount) public returns (bool) {
     address provider = ADDRESSES_PROVIDER.getPool();
     return IERC20(token).approve(provider, amount);
   }
-
-  // function supportedList(address token) public view returns (bool) {
-  //   // IPool.ReserveData memory reserveData = IPool.getReserveData(token);
-  //   DataTypes.ReserveData memory reserveData = iPool.getReserveData(token);
-  //   return
-  //     iPool.getReserveData(token).configuration.data & 0x1 == 1 &&
-  //     reserveData.configuration.data & 0x2 == 0x2;
-  // }
 
   function getUserData(
     address _user
@@ -254,6 +261,7 @@ contract Wallet {
     iPool.setUserUseReserveAsCollateral(token, true);
   }
 
+  //Swap debtToken to different interest mode
   function enableStableRateMode(address token) public {
     iPool.swapBorrowRateMode(token, 1);
   }
@@ -288,7 +296,13 @@ contract Wallet {
     return balance[token].debt;
   }
 
-  // function getsSwapRouter() public view returns(address){
-  //     return address(swapRouter);
-  // }
+  function getSupportedList() public {
+    address[] memory supportedList = iPool.getReservesList();
+    for (uint256 i = 0; i < supportedList.length; i++) {
+      address tokenAddress = supportedList[i];
+      isSupportedToken[tokenAddress] = true;
+      // console.log(tokenAddress);
+      // console.log(isSupportedToken[wmaticAddress]);
+    }
+  }
 }
