@@ -1,9 +1,17 @@
-import { ERC20 } from "./../typechain-types/@openzeppelin/contracts/token/ERC20/ERC20";
+import { TickMath } from "@uniswap/v3-sdk";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { assert, expect } from "chai";
 import { network, deployments, ethers } from "hardhat";
 import { developmentChains } from "../helper-hardhat-config";
-import { IERC20, IPool, ISwapRouter, IWeth, Wallet } from "../typechain-types";
+import {
+  IERC20,
+  IPool,
+  ISwapRouter,
+  IUniswapV3Factory,
+  IWeth,
+  TestToken,
+  Wallet,
+} from "../typechain-types";
 
 const IPOOL = "0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e";
 
@@ -13,10 +21,12 @@ const ISWAPROUTER = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
 const WETH9 = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 // const WETH9 = "0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce";
 // 0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce shiba inu
+const POOLFACTORY = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
 
 let AMOUNT = 100;
 
 const Weth = ethers.utils.parseEther("1");
+const TestAmount = ethers.utils.parseEther("1");
 
 !developmentChains.includes(network.name)
   ? describe.skip
@@ -30,11 +40,12 @@ const Weth = ethers.utils.parseEther("1");
       let iSwapRouter: ISwapRouter;
       let iPool: IPool;
       let IWethContract: IWeth;
+      let poolFactory: IUniswapV3Factory;
+      let TestToken: TestToken;
 
       beforeEach(async () => {
         accounts = await ethers.getSigners();
         owner = accounts[0];
-        // console.log(owner.address);
         await deployments.fixture(["all"]);
         walletContract = await ethers.getContract("Wallet");
         IWethContract = await ethers.getContractAt("IWeth", WETH9);
@@ -42,6 +53,10 @@ const Weth = ethers.utils.parseEther("1");
         dai = await ethers.getContractAt("IERC20", DAI);
         usdc = await ethers.getContractAt("IERC20", USDC);
         iSwapRouter = await ethers.getContractAt("ISwapRouter", ISWAPROUTER);
+        poolFactory = await ethers.getContractAt(
+          "IUniswapV3Factory",
+          POOLFACTORY
+        );
         iPool = await ethers.getContractAt("IPool", IPOOL);
         await dai.connect(owner).approve(wallet.address, AMOUNT);
         await dai.connect(owner).approve(iPool.address, AMOUNT);
@@ -254,6 +269,43 @@ const Weth = ethers.utils.parseEther("1");
           await wallet.deposit(IWethContract.address, amountIn);
           await wallet.supplyAaveV3(IWethContract.address, amountIn);
           await wallet.withdrawAaveV3(IWethContract.address, amountIn);
+        });
+      });
+
+      describe.only("CreatePool and modify liquidity", () => {
+        beforeEach(async () => {
+          TestToken = await ethers.getContract("TestToken");
+          await TestToken.connect(owner).approve(wallet.address, TestAmount);
+          await wallet.deposit(TestToken.address, TestAmount);
+          const pool = await wallet.creatPool(
+            IWethContract.address,
+            TestToken.address,
+            3000
+          );
+
+          const liquidity = await wallet.poolLiquidity(
+            IWethContract.address,
+            TestToken.address,
+            3000
+          );
+          console.log(liquidity.toString());
+        });
+
+        it("should be able to add liquidity", async () => {
+          const tickLower = 0;
+          const tickUpper = ethers.utils.parseEther("0.1");
+
+          const tx = await wallet.addPosition(
+            IWethContract.address,
+            TestToken.address,
+            3000,
+            wallet.address,
+            tickLower,
+            1000,
+            ethers.utils.parseEther("0.1"),
+            "0x00"
+          );
+          console.log(tx);
         });
       });
     });

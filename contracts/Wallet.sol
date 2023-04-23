@@ -5,6 +5,8 @@ pragma solidity ^0.8.0;
 import "hardhat/console.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
+import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 import "@aave/core-v3/contracts/interfaces/IPool.sol";
 import { DataTypes } from "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
@@ -23,6 +25,9 @@ contract Wallet {
     ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
   IPool public iPool;
   IPoolAddressesProvider public immutable ADDRESSES_PROVIDER;
+  IUniswapV3Factory public uniswapFactory =
+    IUniswapV3Factory(0x1F98431c8aD98523631AE4a59f267346ea31F984);
+  IUniswapV3Pool public UniswapPool;
 
   //Struct
 
@@ -30,6 +35,12 @@ contract Wallet {
     uint256 underlying;
     uint256 collateral;
     uint256 debt;
+  }
+
+  struct Pool {
+    address token0;
+    address token1;
+    uint24 fee;
   }
 
   //Constructor
@@ -45,6 +56,9 @@ contract Wallet {
   mapping(address => uint256) public tokenBalance;
   mapping(address => Balance) public balance;
   mapping(address => bool) public isSupportedToken;
+
+  mapping(address => mapping(address => mapping(uint24 => address)))
+    public getPool;
 
   //Events
   event Deposit(address indexed token, uint indexed amount);
@@ -304,5 +318,103 @@ contract Wallet {
       // console.log(tokenAddress);
       // console.log(isSupportedToken[wmaticAddress]);
     }
+  }
+
+  //Uniswap v3 add liquidity
+
+  function creatPool(
+    address token0,
+    address token1,
+    uint24 fee
+  ) public returns (address poolAddress) {
+    poolAddress = uniswapFactory.createPool(token0, token1, fee);
+    getPool[token0][token1][fee] = poolAddress;
+    getPool[token1][token0][fee] = poolAddress;
+  }
+
+  function addPosition(
+    address token0,
+    address token1,
+    uint24 fee,
+    address recipient,
+    int24 tickLower, // 900 - 1.01
+    int24 tickUpper, //1100 - 1.
+    uint128 amount,
+    bytes calldata data
+  ) public returns (uint256 amount0, uint256 amount1) {
+    if (amount <= 0) {
+      revert MoreThanZero();
+    }
+
+    address poolAddress = getPool[token0][token1][fee];
+    TransferHelper.safeApprove(token0, poolAddress, amount);
+    TransferHelper.safeApprove(token1, poolAddress, amount);
+
+    (amount0, amount1) = IUniswapV3Pool(poolAddress).mint(
+      recipient,
+      tickLower,
+      tickUpper,
+      amount,
+      data
+    );
+
+    tokenBalance[token0] -= amount0;
+    tokenBalance[token1] -= amount1;
+  }
+
+  function removePosition(
+    address token0,
+    address token1,
+    uint24 fee,
+    int24 tickLower,
+    int24 tickUpper,
+    uint128 amount
+  ) public {
+    if (amount <= 0) {
+      revert MoreThanZero();
+    }
+    address poolAddress = getPool[token0][token1][fee];
+    (uint256 amount0, uint256 amount1) = IUniswapV3Pool(poolAddress).burn(
+      tickLower,
+      tickUpper,
+      amount
+    );
+
+    tokenBalance[token0] += amount0;
+    tokenBalance[token1] += amount1;
+  }
+
+  function updatePosition(
+    address token0,
+    address token1,
+    uint24 fee,
+    address recipient,
+    int24 tickLower,
+    int24 tickUpper,
+    uint128 amount,
+    bytes calldata data
+  ) public {
+    if (amount <= 0) {
+      revert MoreThanZero();
+    }
+    addPosition(
+      token0,
+      token1,
+      fee,
+      recipient,
+      tickLower,
+      tickUpper,
+      amount,
+      data
+    );
+  }
+
+  function poolLiquidity(
+    address token0,
+    address token1,
+    uint24 fee
+  ) public view returns (uint128 liquidity) {
+    address poolAddress = getPool[token0][token1][fee];
+    liquidity = IUniswapV3Pool(poolAddress).liquidity();
   }
 }
