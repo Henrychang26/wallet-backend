@@ -12,6 +12,7 @@ import {
   TestToken,
   Wallet,
 } from "../typechain-types";
+import encodePriceSqrt from "../utils/encodePriceSqrt";
 
 const IPOOL = "0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e";
 
@@ -26,7 +27,7 @@ const POOLFACTORY = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
 let AMOUNT = 100;
 
 const Weth = ethers.utils.parseEther("1");
-const TestAmount = ethers.utils.parseEther("1");
+const TestAmount = ethers.utils.parseEther("100");
 
 !developmentChains.includes(network.name)
   ? describe.skip
@@ -274,6 +275,9 @@ const TestAmount = ethers.utils.parseEther("1");
 
       describe.only("CreatePool and modify liquidity", () => {
         beforeEach(async () => {
+          // const sqrt96 = ethers.utils.parseEther("0.0000001");
+          // const approvedAmount = ethers.utils.parseEther("1");
+          const price = encodePriceSqrt(1, 1);
           TestToken = await ethers.getContract("TestToken");
           await TestToken.connect(owner).approve(wallet.address, TestAmount);
           await wallet.deposit(TestToken.address, TestAmount);
@@ -282,27 +286,47 @@ const TestAmount = ethers.utils.parseEther("1");
             TestToken.address,
             3000
           );
+          await wallet.initializePool(
+            IWethContract.address,
+            TestToken.address,
+            3000,
+            price
+          );
 
-          const liquidity = await wallet.poolLiquidity(
+          const poolAddress = await wallet.getPool(
             IWethContract.address,
             TestToken.address,
             3000
           );
-          console.log(liquidity.toString());
+          const bal = await IWethContract.balanceOf(poolAddress);
+          const bal1 = await TestToken.balanceOf(poolAddress);
+
+          console.log(bal.toString());
+          console.log(bal1.toString());
+
+          // await IWethContract.approve(poolAddress, approvedAmount);
+          // await TestToken.approve(poolAddress, approvedAmount);
+          const space = await wallet.viewTickSpacing(
+            IWethContract.address,
+            TestToken.address,
+            3000
+          );
+          console.log(space.toString());
         });
 
         it("should be able to add liquidity", async () => {
-          const tickLower = 0;
-          const tickUpper = ethers.utils.parseEther("0.1");
+          // const tickLower = 0.6;
+          // const tickUpper = ethers.utils.parseEther("0.6");
+          // const tickLower = ethers.utils.parseEther("0.06");
 
           const tx = await wallet.addPosition(
             IWethContract.address,
             TestToken.address,
             3000,
             wallet.address,
-            tickLower,
-            1000,
-            ethers.utils.parseEther("0.1"),
+            0,
+            6000,
+            ethers.utils.parseEther("2"),
             "0x00"
           );
           console.log(tx);

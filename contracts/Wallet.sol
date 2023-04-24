@@ -11,6 +11,8 @@ import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 import "@aave/core-v3/contracts/interfaces/IPool.sol";
 import { DataTypes } from "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
 import { IPoolAddressesProvider } from "@aave/core-v3/contracts/interfaces/IPoolAddressesProvider.sol";
+import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.sol";
+import "@uniswap/v3-core/contracts/interfaces/IERC20Minimal.sol";
 
 error NotOwner();
 error MoreThanZero();
@@ -28,6 +30,7 @@ contract Wallet {
   IUniswapV3Factory public uniswapFactory =
     IUniswapV3Factory(0x1F98431c8aD98523631AE4a59f267346ea31F984);
   IUniswapV3Pool public UniswapPool;
+  // IUniswapV3MintCallback public uniswapV3MintCallback;
 
   //Struct
 
@@ -88,6 +91,8 @@ contract Wallet {
   }
 
   receive() external payable {}
+
+  fallback() external payable {}
 
   function deposit(address token, uint256 amount) external {
     if (amount <= 0) {
@@ -332,6 +337,25 @@ contract Wallet {
     getPool[token1][token0][fee] = poolAddress;
   }
 
+  function initializePool(
+    address token0,
+    address token1,
+    uint24 fee,
+    uint160 sqrtPriceX96
+  ) public {
+    address poolAddress = getPool[token1][token0][fee];
+    IUniswapV3Pool(poolAddress).initialize(sqrtPriceX96);
+  }
+
+  function viewTickSpacing(
+    address token0,
+    address token1,
+    uint24 fee
+  ) public view returns (int24 space) {
+    address poolAddress = getPool[token1][token0][fee];
+    space = IUniswapV3Pool(poolAddress).tickSpacing();
+  }
+
   function addPosition(
     address token0,
     address token1,
@@ -357,6 +381,13 @@ contract Wallet {
       amount,
       data
     );
+    console.log(amount0);
+    console.log(amount1);
+    // IUniswapV3MintCallback(address(this)).uniswapV3MintCallback(
+    //   amount0,
+    //   amount1,
+    //   data
+    // );
 
     tokenBalance[token0] -= amount0;
     tokenBalance[token1] -= amount1;
